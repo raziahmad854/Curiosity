@@ -1,19 +1,17 @@
 import os
 import json
-import httpx
+import urllib.parse
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from groq import Groq
-from dotenv import load_dotenv
 
-# Load .env from parent directory (where the .env file lives)
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
-
+# Load environment variables (Vercel injects these automatically from project settings)
 app = FastAPI(title="Curiosity API")
 
-# CORS — allow all origins for local development
+# CORS — allow all origins for deployment
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,7 +30,7 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
 async def search_image(query: str, width: int = 800, height: int = 500) -> str:
     """Search for a photo matching the query.
-    Priority: Pexels API (needs key) → Pixabay (free) → Wikimedia Commons (free) → Unsplash Source fallback."""
+    Priority: Pexels API (needs key) → Wikimedia Commons (free) → Unsplash Source fallback."""
 
     # 1) Try Pexels API (if key is available)
     if PEXELS_API_KEY:
@@ -71,14 +69,12 @@ async def search_image(query: str, width: int = 800, height: int = 500) -> str:
             resp.raise_for_status()
             data = resp.json()
             pages = data.get("query", {}).get("pages", {})
-            # Filter for actual image files and pick the best one
             for _page_id, page in sorted(pages.items(), key=lambda x: x[0]):
                 imageinfo = page.get("imageinfo", [])
                 if imageinfo:
                     info = imageinfo[0]
                     mime = info.get("mime", "")
                     if mime.startswith("image/") and "svg" not in mime:
-                        # Prefer the thumbnail at requested width, fallback to full URL
                         thumb_url = info.get("thumburl")
                         full_url = info.get("url")
                         if thumb_url:
@@ -89,28 +85,25 @@ async def search_image(query: str, width: int = 800, height: int = 500) -> str:
         pass
 
     # 3) Final fallback: Unsplash Source — free, no key, returns topic-relevant images
-    import urllib.parse
     encoded = urllib.parse.quote(query)
     return f"https://source.unsplash.com/{width}x{height}/?{encoded}"
 
 
 async def resolve_article_images(article: dict) -> dict:
-    """Resolve imageQuery fields to actual image URLs using available image search services."""
-    # Hero image
+    """Resolve imageQuery fields to actual image URLs."""
     hero_query = article.get("heroImageQuery", "curiosity science")
     article["heroImageUrl"] = await search_image(hero_query, 1200, 800)
 
-    # Section images
     for section in article.get("sections", []):
         query = section.get("imageQuery", "science")
         section["imageUrl"] = await search_image(query, 980, 550)
 
-    # Related topic images
     for related in article.get("relatedTopics", []):
         query = related.get("imageQuery", "curiosity")
         related["imageUrl"] = await search_image(query, 600, 450)
 
     return article
+
 
 ARTICLE_PROMPT = """You are a world-class science and culture writer known for creating addictive, curiosity-driven articles. Your writing style is vivid, accessible, and full of surprising connections. You write like a blend of Malcolm Gladwell, Tim Urban (Wait But Why), and National Geographic.
 
