@@ -57,11 +57,8 @@ function getBadgeStyle(topic: string) {
   };
 }
 
-// Dynamic image generation via Picsum Photos (using query as seed for consistency)
-function getImageUrl(query: string, width = 800, height = 500) {
-  const seed = encodeURIComponent(query.toLowerCase().replace(/[^a-z0-9]/g, ''));
-  return `https://picsum.photos/seed/${seed}/${width}/${height}`;
-}
+// Fallback image when backend doesn't provide a resolved URL
+const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&q=80';
 
 function App() {
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
@@ -474,7 +471,7 @@ function App() {
             {/* Background Image */}
             <div className="absolute inset-0">
               <img 
-                src={getImageUrl(article.heroImageQuery, 1200, 800)} 
+                src={article.heroImageUrl || FALLBACK_IMAGE} 
                 alt={article.title} 
                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
               />
@@ -550,7 +547,7 @@ function App() {
               {/* Image Column */}
               <div className="relative">
                 <img 
-                  src={getImageUrl(article.heroImageQuery, 800, 600)} 
+                  src={article.heroImageUrl || FALLBACK_IMAGE} 
                   alt={article.title} 
                   className="w-full h-[400px] lg:h-[500px] object-cover rounded-2xl"
                 />
@@ -575,7 +572,7 @@ function App() {
                   {/* Inline Image */}
                   <div className="inline-image my-12">
                     <img 
-                      src={getImageUrl(section.imageQuery, 980, 550)} 
+                      src={section.imageUrl || FALLBACK_IMAGE} 
                       alt={section.imageCaption} 
                       className="w-full h-auto rounded-2xl"
                     />
@@ -623,7 +620,7 @@ function App() {
               >
                 <div className="absolute inset-0">
                   <img 
-                    src={getImageUrl(related.imageQuery, 600, 450)} 
+                    src={related.imageUrl || FALLBACK_IMAGE} 
                     alt={related.title}
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />

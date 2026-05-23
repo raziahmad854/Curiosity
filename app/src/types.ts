@@ -3,12 +3,14 @@ export interface ArticleSection {
   paragraphs: string[];
   imageQuery: string;
   imageCaption: string;
+  imageUrl?: string;
 }
 
 export interface RelatedTopic {
   title: string;
   topic: string;
   imageQuery: string;
+  imageUrl?: string;
 }
 
 export interface Article {
@@ -17,6 +19,8 @@ export interface Article {
   topic: string;
   readTime: string;
   heroImageQuery: string;
+  heroImageUrl?: string;
   sections: ArticleSection[];
   relatedTopics: RelatedTopic[];
 }
+
