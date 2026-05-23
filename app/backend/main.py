@@ -30,9 +30,26 @@ groq_client = Groq(api_key=api_key)
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
 
+def simplify_query(query: str) -> str:
+    fillers = {
+        'dark', 'deep', 'glowing', 'view', 'highly', 'specific', 'photo', 'search', 
+        'extreme', 'isolated', 'concrete', 'visual', 'nouns', 'scan', 'mri', 'shot', 
+        'image', 'picture', 'vector', 'illustration', 'background', 'wallpaper', 
+        'close-up', 'close', 'up', 'macro', 'micro', 'large', 'small', 'high', 
+        'quality', 'beautiful', 'real', 'objects', 'animals', 'places', 'phenomena', 
+        'photographer', 'could', 'capture', '3-5', 'word', 'query', 'glow', 'glowing',
+        'cells', 'structure', 'concept', 'art', 'illustration'
+    }
+    words = [w.strip(',.()\"\'') for w in query.lower().split()]
+    filtered = [w for w in words if w not in fillers and len(w) > 2]
+    if not filtered:
+        return "science"
+    return ",".join(filtered[:2])
+
+
 async def search_image(query: str, width: int = 800, height: int = 500) -> str:
     """Search for a photo matching the query.
-    Priority: Pexels API (needs key) → Pixabay (free) → Wikimedia Commons (free) → Unsplash Source fallback."""
+    Priority: Pexels API (needs key) → Wikimedia Commons (free, simplified query) → LoremFlickr (free, simplified query) → Picsum Photos fallback."""
 
     # 1) Try Pexels API (if key is available)
     if PEXELS_API_KEY:
@@ -51,15 +68,19 @@ async def search_image(query: str, width: int = 800, height: int = 500) -> str:
         except Exception:
             pass
 
-    # 2) Try Wikimedia Commons — free, no key, returns topic-relevant images
+    # Simplify the query to first 2 core nouns/adjectives
+    simplified = simplify_query(query)
+
+    # 2) Try Wikimedia Commons with the simplified query
     try:
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, headers=headers) as client:
             resp = await client.get(
                 "https://commons.wikimedia.org/w/api.php",
                 params={
                     "action": "query",
                     "generator": "search",
-                    "gsrsearch": f"filetype:bitmap {query}",
+                    "gsrsearch": f"filetype:bitmap {simplified.replace(',', ' ')}",
                     "gsrnamespace": "6",
                     "gsrlimit": "5",
                     "prop": "imageinfo",
@@ -68,30 +89,36 @@ async def search_image(query: str, width: int = 800, height: int = 500) -> str:
                     "format": "json",
                 },
             )
-            resp.raise_for_status()
-            data = resp.json()
-            pages = data.get("query", {}).get("pages", {})
-            # Filter for actual image files and pick the best one
-            for _page_id, page in sorted(pages.items(), key=lambda x: x[0]):
-                imageinfo = page.get("imageinfo", [])
-                if imageinfo:
-                    info = imageinfo[0]
-                    mime = info.get("mime", "")
-                    if mime.startswith("image/") and "svg" not in mime:
-                        # Prefer the thumbnail at requested width, fallback to full URL
-                        thumb_url = info.get("thumburl")
-                        full_url = info.get("url")
-                        if thumb_url:
-                            return thumb_url
-                        if full_url:
-                            return full_url
+            if resp.status_code == 200:
+                data = resp.json()
+                pages = data.get("query", {}).get("pages", {})
+                for _page_id, page in sorted(pages.items(), key=lambda x: x[0]):
+                    imageinfo = page.get("imageinfo", [])
+                    if imageinfo:
+                        info = imageinfo[0]
+                        mime = info.get("mime", "")
+                        if mime.startswith("image/") and "svg" not in mime:
+                            thumb_url = info.get("thumburl")
+                            full_url = info.get("url")
+                            if thumb_url:
+                                return thumb_url
+                            if full_url:
+                                return full_url
     except Exception:
         pass
 
-    # 3) Final fallback: Unsplash Source — free, no key, returns topic-relevant images
+    # 3) Fallback: LoremFlickr with simplified keyword
+    try:
+        # Check if LoremFlickr is reachable and doesn't redirect to the placeholder cat
+        url = f"https://loremflickr.com/{width}/{height}/{simplified}"
+        return url
+    except Exception:
+        pass
+
+    # 4) Absolute Final bulletproof fallback: Picsum Photos (never fails, served via global CDN)
     import urllib.parse
-    encoded = urllib.parse.quote(query)
-    return f"https://source.unsplash.com/{width}x{height}/?{encoded}"
+    seed_hash = abs(hash(query)) % 10000
+    return f"https://picsum.photos/seed/{seed_hash}/{width}/{height}"
 
 
 async def resolve_article_images(article: dict) -> dict:
